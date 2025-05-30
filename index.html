@@ -4,14 +4,23 @@
   <meta charset="UTF-8">
   <title>FLUXY – LI-6800 Log Editor</title>
   <link rel="stylesheet" href="style.css">
+  <style>
+    img.floating-demo {
+      width: 50%;
+      float: right;
+      margin: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+  </style>
 </head>
 <body>
 
+  <!-- Floating demo screenshot outside container -->
+  <img src="demo.png" alt="FLUXY screenshot" class="floating-demo">
 
-    <!-- Screenshot Section -->
-    <img src="demo.png" alt="Screenshot of FLUXY in action" style="max-width:50%; border-radius: 8px; margin-bottom: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-
-    <!-- Main Description -->
+  <!-- Main content block -->
+  <div class="container">
     <h1>FLUXY</h1>
     <p>A lightweight R Shiny app to trim and export stable sections of LI-COR LI-6800 logs for downstream analysis.</p>
     <a href="app.R" download class="button">Download FLUXY</a>
@@ -25,11 +34,12 @@
       <p style="font-style: italic;">This is an academic/open-source tool, not a commercial product.</p>
     </div>
 
-    <!-- Call for Citation -->
+    <!-- Call to action -->
     <div style="margin-top: 2rem; padding: 1rem; border: 1px solid #ccc; border-radius: 8px; background: #f9f9f9;">
       <p style="margin: 0.5rem 0;"><strong>Did you use FLUXY in a paper?</strong><br>
       Let us know — we might feature your work here!</p>
     </div>
+  </div>
 
 </body>
 </html>

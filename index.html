@@ -10,10 +10,10 @@
   <!-- Main content block -->
   <div style="padding: 1rem 0;">
     <!-- Demo image now inside the container, above the main content -->
-    <img src="fluxy_splash.png" alt="FLUXY screenshot" style="width:45%; display:block; margin:0 auto; border-radius: 8px;">
+    <img src="fluxy_splash.png" alt="FLUXY screenshot" style="width:40%; display:block; margin:0 auto; border-radius: 8px;">
 
     <div style="margin-top: 1rem;"></div>
-    <div class="container" style="width: 40%; margin: 0 auto;">
+    <div class="container" style="width: 60%; min-width: 400px; max-width: 800px; margin: 0 auto; border: 5px solid #389cdf;">
     <h1>🍃 FLUXY The LI-6800 Time-Series Visualizer</h1>
     <p>A lightweight R Shiny app to trim and export stable sections of LI-COR LI-6800 logs for downstream analysis.</p>
     <a href="app.R" download class="button">Download FLUXY</a>
@@ -27,12 +27,42 @@
       <p style="font-style: italic;">This is an academic/open-source tool, not a commercial product.</p>
     </div>
 
-    <!-- Call to action -->
-    <div style="margin-top: 1rem; padding: 1rem; border: 1px solid #ccc; border-radius: 8px; background: #f9f9f9;">
+   
+
+    <!-- How to Run FLUXY Section -->
+    <div style="margin-top: 2rem; padding: 1.5rem; border: 2px solid #007acc; border-radius: 8px; background: #f8fbff;">
+      <h2 style="margin-top: 0; color: #007acc;">🧪 How to Run FLUXY</h2>
+      <ol style="text-align: left; padding-left: 1.5rem;">
+        <li style="margin-bottom: 0.5rem;">Open R (or RStudio) and run:<br>
+          <code style="background: #e9e9e9; padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace;">install.packages("shiny")</code>
+        </li>
+        <li style="margin-bottom: 0.5rem;">Save app.R somewhere and open it in RStudio. (don't rename it!)</li>
+        <li>Click "Run App" — that's it! 🚀</li>
+      </ol>
+    </div>
+
+    <!-- Features Section -->
+    <div style="margin-top: 2rem; padding: 1.5rem; border: 1px solid #28a745; border-radius: 8px; background: #f8fff9;">
+      <h2 style="margin-top: 0; color: #28a745;">✨ Features</h2>
+      <ul style="text-align: left; padding-left: 1.5rem;">
+        <li>Load raw LI-COR data logs</li>
+        <li>Visualize multiple variables at once</li>
+        <li>Adjust axes and ignore outliers</li>
+        <li>Label segments in multiple categories</li>
+        <li>Automatically detect matching events and exclude artifacts</li>
+        <li>Export categories in a new column</li>
+        <li>Export to CSV, RData, or to your R environment!</li>
+      </ul>
+    </div>
+
+     <!-- Call to action -->
+     <div style="margin-top: 1rem; padding: 1rem; border: 1px solid #ccc; border-radius: 8px; background: #f9f9f9;">
       <p style="margin: 0.5rem 0;"><strong>Did you use FLUXY in a paper?</strong><br>
       Let us know — we might feature your work here!</p>
     </div>
   </div>
+
+  
   </div>
 
 </body>

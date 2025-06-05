@@ -80,7 +80,7 @@ ui <- fluidPage(
                         options = list(maxItems = 8)),
           
           # Add outlier filter checkbox
-          checkboxInput("ignore_outliers", "Ignore Extreme Outliers (±1%)", value = TRUE),
+          checkboxInput("ignore_outliers", "Ignore Extreme Outliers (Default ±1%)", value = TRUE),
           conditionalPanel(
             condition = "input.ignore_outliers == true",
             numericInput("outlier_percentile", "Outlier Percentile to Ignore (%)", 
@@ -111,36 +111,13 @@ ui <- fluidPage(
         # Tab 3: Match Detect
         tabPanel("Match Detect",
           h4("Auto-Detect Licor Matching Events"),
-          p("This feature detects periods when the LI-6800 was likely performing a matching calibration."),
+          p("This feature detects periods when the LI-6800 was likely performing a matching calibration by identifying time gaps in data collection."),
           
-          # Gap detection method
-          radioButtons("matching_method", "Detection Method",
-                     choices = c("Time Gap Detection" = "gap", 
-                                "Value Spike Detection" = "spike"),
-                     selected = "gap"),
-          
-          # Gap detection parameters
-          conditionalPanel(
-            condition = "input.matching_method == 'gap'",
-            sliderInput("gap_threshold", "Minimum Gap Size (seconds)",
-                      min = 5, max = 120, value = 40, step = 5),
-            sliderInput("buffer_time", "Buffer Time to Add (seconds)",
-                      min = 5, max = 60, value = 20, step = 5)
-          ),
-          
-          # Spike detection parameters (original method)
-          conditionalPanel(
-            condition = "input.matching_method == 'spike'",
-            sliderInput("matching_sensitivity", "Detection Sensitivity",
-                       min = 1, max = 10, value = 5, step = 1),
-            numericInput("matching_window", "Window Size Around Matching (seconds)",
-                        value = 30, min = 10, max = 300),
-            
-            # Variables to check
-            checkboxGroupInput("matching_vars", "Variables to Check for Matching",
-                              choices = c("CO2_r", "CO2_s", "H2O_r", "H2O_s", "A"),
-                              selected = c("CO2_r", "CO2_s"))
-          ),
+          # Gap detection parameters only
+          sliderInput("gap_threshold", "Minimum Gap Size (seconds)",
+                    min = 5, max = 120, value = 40, step = 5),
+          sliderInput("buffer_time", "Buffer Time to Add (seconds)",
+                    min = 5, max = 60, value = 20, step = 5),
           
           # Action buttons - Detection controls
           div(style = "margin-bottom: 10px;",
@@ -167,9 +144,13 @@ ui <- fluidPage(
         # Tab 4: Export (moved to the end)
         tabPanel("Export",
           h4("Export Data"),
+          tags$ul(
+            tags$li("Only categorized data is exported (uncategorized data is excluded)"),
+            tags$li("Points in multiple categories will be duplicated in the results")
+          ),
           radioButtons("export_type", "Export Type",
-                     choices = c("Consolidated Table" = "consolidated",
-                                "Separate Tables" = "separate"),
+                     choices = c("Consolidate all categories into single table" = "consolidated",
+                                "Separate categories into their own tables" = "separate"),
                      selected = "consolidated"),
           selectInput("export_format", "Export Format", 
                      choices = c("CSV Files" = "csv", 
@@ -616,7 +597,7 @@ server <- function(input, output, session) {
       # Export based on format
       if (input$export_format == "csv") {
         # Create directory if it doesn't exist
-        dir_name <- "li6800_categories"
+        dir_name <- "csv_exports"
         if (!dir.exists(dir_name)) {
           dir.create(dir_name)
         }
@@ -671,7 +652,7 @@ server <- function(input, output, session) {
       # Different export methods
       if (input$export_format == "csv") {
         # Create directory if it doesn't exist
-        dir_name <- "li6800_categories"
+        dir_name <- "csv_exports"
         if (!dir.exists(dir_name)) {
           dir.create(dir_name)
         }
@@ -692,11 +673,12 @@ server <- function(input, output, session) {
       } else if (input$export_format == "rdata") {
         # Export all categories as a single RData file
         file_name <- paste0(input$export_prefix, "categories.RData")
-        save(cat_data, file = file_name)
+        categories_data <- cat_data  # Rename for consistency
+        save(categories_data, file = file_name)
         
         output$export_info <- renderPrint({
           cat("Exported all categories to", file_name, cat_col_info, "\n")
-          cat("The data is stored as a list named 'cat_data' with", length(cat_data), "categories.\n")
+          cat("The data is stored as a list named 'categories_data' with", length(cat_data), "categories.\n")
         })
       } else if (input$export_format == "env") {
         # Export to global environment
@@ -725,36 +707,6 @@ server <- function(input, output, session) {
     stringsAsFactors = FALSE
   ))
   
-  # Update matching variable choices based on available data
-  observe({
-    req(available_vars())
-    vars <- available_vars()
-    
-    # Look for specific matching-related variables with case-insensitive search
-    matching_related <- c()
-    
-    # Check for CO2 variables
-    co2_vars <- grep("co2.*[rs]|co2_(?:ref|sam)|co2_(?:reference|sample)", 
-                   vars, ignore.case = TRUE, value = TRUE)
-    if (length(co2_vars) > 0) matching_related <- c(matching_related, co2_vars)
-    
-    # Check for H2O variables
-    h2o_vars <- grep("h2o.*[rs]|h2o_(?:ref|sam)|h2o_(?:reference|sample)", 
-                   vars, ignore.case = TRUE, value = TRUE)
-    if (length(h2o_vars) > 0) matching_related <- c(matching_related, h2o_vars)
-    
-    # Add A (photosynthesis) as it shows matching effects
-    a_vars <- grep("^a$", vars, ignore.case = TRUE, value = TRUE)
-    if (length(a_vars) > 0) matching_related <- c(matching_related, a_vars)
-    
-    # Update checkbox choices if we found any matches
-    if (length(matching_related) > 0) {
-      updateCheckboxGroupInput(session, "matching_vars", 
-                            choices = matching_related,
-                            selected = matching_related[1:min(2, length(matching_related))])
-    }
-  })
-  
   # Detect matching events
   observeEvent(input$detect_matching, {
     req(data())
@@ -771,34 +723,47 @@ server <- function(input, output, session) {
       stringsAsFactors = FALSE
     )
     
-    # Choose detection method based on user input
-    if (input$matching_method == "gap") {
-      # GAP DETECTION METHOD
+    # GAP DETECTION METHOD
+    
+    # Make sure we have elapsed time
+    if (!("elapsed" %in% names(dt))) {
+      showNotification("No elapsed time column found", type = "error")
+      return()
+    }
+    
+    # Sort data by elapsed time and remove rows with NA elapsed times
+    dt <- dt[!is.na(dt$elapsed), ]
+    dt <- dt[order(dt$elapsed), ]
+    
+    # Check if we have enough data after removing NAs
+    if (nrow(dt) < 2) {
+      showNotification("Not enough valid data points for gap detection", type = "error")
+      return()
+    }
+    
+    # Calculate time differences between consecutive measurements
+    time_diffs <- diff(dt$elapsed)
+    
+    # Remove any NA values from time differences
+    valid_diffs <- !is.na(time_diffs) & is.finite(time_diffs)
+    
+    if (sum(valid_diffs) == 0) {
+      showNotification("No valid time differences found", type = "warning")
+      all_events <- data.frame(
+        start = numeric(),
+        end = numeric(),
+        magnitude = numeric(),
+        variable = character(),
+        stringsAsFactors = FALSE
+      )
+    } else {
+      # Find gaps that exceed the threshold (only among valid differences)
+      gap_threshold <- max(5, input$gap_threshold) # Minimum 5 seconds
+      gap_indices <- which(valid_diffs & time_diffs > gap_threshold)
       
-      # Make sure we have elapsed time
-      if (!("elapsed" %in% names(dt))) {
-        showNotification("No elapsed time column found", type = "error")
-        return()
-      }
-      
-      # Sort data by elapsed time and remove rows with NA elapsed times
-      dt <- dt[!is.na(dt$elapsed), ]
-      dt <- dt[order(dt$elapsed), ]
-      
-      # Check if we have enough data after removing NAs
-      if (nrow(dt) < 2) {
-        showNotification("Not enough valid data points for gap detection", type = "error")
-        return()
-      }
-      
-      # Calculate time differences between consecutive measurements
-      time_diffs <- diff(dt$elapsed)
-      
-      # Remove any NA values from time differences
-      valid_diffs <- !is.na(time_diffs) & is.finite(time_diffs)
-      
-      if (sum(valid_diffs) == 0) {
-        showNotification("No valid time differences found", type = "warning")
+      # If no gaps found, inform the user
+      if (length(gap_indices) == 0) {
+        showNotification("No time gaps exceeding the threshold were found", type = "warning")
         all_events <- data.frame(
           start = numeric(),
           end = numeric(),
@@ -807,159 +772,32 @@ server <- function(input, output, session) {
           stringsAsFactors = FALSE
         )
       } else {
-        # Find gaps that exceed the threshold (only among valid differences)
-        gap_threshold <- max(5, input$gap_threshold) # Minimum 5 seconds
-        gap_indices <- which(valid_diffs & time_diffs > gap_threshold)
+        # For each gap, create an event
+        buffer <- max(5, input$buffer_time) # Minimum 5 seconds buffer
         
-        # If no gaps found, inform the user
-        if (length(gap_indices) == 0) {
-          showNotification("No time gaps exceeding the threshold were found", type = "warning")
-          all_events <- data.frame(
-            start = numeric(),
-            end = numeric(),
-            magnitude = numeric(),
-            variable = character(),
-            stringsAsFactors = FALSE
-          )
-        } else {
-          # For each gap, create an event
-          buffer <- max(5, input$buffer_time) # Minimum 5 seconds buffer
+        for (idx in gap_indices) {
+          # Calculate start and end times for this event
+          # The event is centered on the gap
+          gap_start_time <- dt$elapsed[idx]
+          gap_end_time <- dt$elapsed[idx + 1]
           
-          for (idx in gap_indices) {
-            # Calculate start and end times for this event
-            # The event is centered on the gap
-            gap_start_time <- dt$elapsed[idx]
-            gap_end_time <- dt$elapsed[idx + 1]
-            
-            # Apply buffer before and after the gap
-            event_start <- gap_start_time - buffer
-            event_end <- gap_end_time + buffer
-            
-            # Calculate magnitude (size of the gap)
-            magnitude <- gap_end_time - gap_start_time
-            
-            # Add to results
-            all_events <- rbind(all_events, data.frame(
-              start = event_start,
-              end = event_end,
-              magnitude = magnitude,
-              variable = "time_gap"
-            ))
-          }
+          # Apply buffer before and after the gap
+          event_start <- gap_start_time - buffer
+          event_end <- gap_end_time + buffer
           
-          # Sort by start time
-          all_events <- all_events[order(all_events$start), ]
-        }
-      }
-    } else {
-      # ORIGINAL SPIKE DETECTION METHOD
-      req(input$matching_vars)
-      
-      # Process each selected variable
-      for (var in input$matching_vars) {
-        # Make sure variable exists in data
-        if (!(var %in% names(dt))) {
-          message("Variable not found: ", var)
-          next
-        }
-        
-        # Get variable data and time, removing NA values
-        var_data <- dt[[var]]
-        time_data <- dt$elapsed
-        
-        # Remove rows where either variable or time is NA
-        valid_rows <- !is.na(var_data) & !is.na(time_data) & is.finite(var_data) & is.finite(time_data)
-        
-        if (sum(valid_rows) < 10) {
-          message("Not enough valid data for variable: ", var)
-          next
-        }
-        
-        # Filter to valid data only
-        var_data <- var_data[valid_rows]
-        time_data <- time_data[valid_rows]
-        
-        # Sort by time (just to be safe)
-        time_order <- order(time_data)
-        var_data <- var_data[time_order]
-        time_data <- time_data[time_order]
-        
-        # Calculate rate of change (derivative)
-        data_diff <- diff(var_data)
-        time_diff <- diff(time_data)
-        
-        # Avoid division by zero and filter out invalid differences
-        valid_time_diff <- time_diff > 0 & is.finite(time_diff) & is.finite(data_diff)
-        
-        if (sum(valid_time_diff) < 5) {
-          message("Not enough valid time differences for variable: ", var)
-          next
-        }
-        
-        # Calculate rate of change only for valid differences
-        rate_of_change <- rep(NA, length(time_diff))
-        rate_of_change[valid_time_diff] <- abs(data_diff[valid_time_diff] / time_diff[valid_time_diff])
-        
-        # Remove any remaining NA or infinite values
-        valid_rates <- is.finite(rate_of_change) & !is.na(rate_of_change)
-        
-        if (sum(valid_rates) < 5) {
-          message("Not enough valid rate calculations for variable: ", var)
-          next
-        }
-        
-        # Determine threshold based on sensitivity
-        # Higher sensitivity = lower threshold = more events detected
-        threshold_percentile <- 100 - (input$matching_sensitivity * 0.5)
-        threshold <- quantile(rate_of_change[valid_rates], threshold_percentile/100, na.rm = TRUE)
-        
-        # Find points exceeding threshold (only among valid rates)
-        spikes <- which(valid_rates & rate_of_change > threshold)
-        
-        # If no spikes found, continue to next variable
-        if (length(spikes) == 0) {
-          message("No matching events found in variable: ", var)
-          next
-        }
-        
-        # Group nearby spikes into events
-        events <- list()
-        current_event <- c(spikes[1])
-        
-        for (i in 2:length(spikes)) {
-          # If this spike is close to the previous one, add it to current event
-          if (time_data[spikes[i]] - time_data[spikes[i-1]] < 10) {  # Within 10 seconds
-            current_event <- c(current_event, spikes[i])
-          } else {
-            # This is a new event, save the old one and start a new one
-            events[[length(events) + 1]] <- current_event
-            current_event <- c(spikes[i])
-          }
-        }
-        # Add the last event
-        events[[length(events) + 1]] <- current_event
-        
-        # Convert events to time ranges with buffer window
-        for (event in events) {
-          # Calculate event boundaries
-          event_start <- time_data[min(event)] - input$matching_window
-          event_end <- time_data[max(event)] + input$matching_window
-          
-          # Calculate magnitude (max rate of change during event)
-          magnitude <- max(rate_of_change[event], na.rm = TRUE)
+          # Calculate magnitude (size of the gap)
+          magnitude <- gap_end_time - gap_start_time
           
           # Add to results
           all_events <- rbind(all_events, data.frame(
             start = event_start,
             end = event_end,
             magnitude = magnitude,
-            variable = var
+            variable = "time_gap"
           ))
         }
-      }
-      
-      # Sort by start time
-      if (nrow(all_events) > 0) {
+        
+        # Sort by start time
         all_events <- all_events[order(all_events$start), ]
       }
     }
@@ -970,22 +808,12 @@ server <- function(input, output, session) {
     # Update info output
     output$matching_info <- renderPrint({
       if (nrow(all_events) == 0) {
-        if (input$matching_method == "gap") {
-          cat("No time gaps exceeding", input$gap_threshold, "seconds were detected.\n")
-          cat("Try reducing the gap threshold or switching to value spike detection.")
-        } else {
-          cat("No matching events detected. Try adjusting the sensitivity or selecting different variables.")
-        }
+        cat("No time gaps exceeding", input$gap_threshold, "seconds were detected.\n")
+        cat("Try reducing the gap threshold to detect smaller gaps.")
       } else {
-        if (input$matching_method == "gap") {
-          cat("Detected", nrow(all_events), "time gaps exceeding", input$gap_threshold, "seconds.\n")
-          cat("These are visualized on the plots with semi-transparent red areas and red boundary lines.\n")
-          cat("Use 'Create Exclusion Category' to permanently mark these areas for exclusion from analysis.")
-        } else {
-          cat("Detected", nrow(all_events), "potential matching events across", length(unique(all_events$variable)), "variables.\n")
-          cat("These are visualized on the plots with semi-transparent red areas and red boundary lines.\n")
-          cat("Use 'Create Exclusion Category' to permanently mark these areas for exclusion from analysis.")
-        }
+        cat("Detected", nrow(all_events), "time gaps exceeding", input$gap_threshold, "seconds.\n")
+        cat("These are visualized on the plots with semi-transparent red areas and red boundary lines.\n")
+        cat("Use 'Create Exclusion Category' to permanently mark these areas for exclusion from analysis.")
       }
     })
   })
@@ -996,23 +824,12 @@ server <- function(input, output, session) {
     if (nrow(events) == 0) return(NULL)
     
     # Format for display
-    if (all(events$variable == "time_gap")) {
-      # For time gap method
-      data.frame(
-        Start = round(events$start, 1),
-        End = round(events$end, 1),
-        Duration = round(events$end - events$start, 1),
-        "Gap Size (s)" = round(events$magnitude, 1)
-      )
-    } else {
-      # For spike method
-      data.frame(
-        Start = round(events$start, 1),
-        End = round(events$end, 1),
-        Duration = round(events$end - events$start, 1),
-        Variable = events$variable
-      )
-    }
+    data.frame(
+      Start = round(events$start, 1),
+      End = round(events$end, 1),
+      Duration = round(events$end - events$start, 1),
+      "Gap Size (s)" = round(events$magnitude, 1)
+    )
   })
   
   # Create exclusion category from matching events
